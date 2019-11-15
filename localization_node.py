@@ -1,19 +1,56 @@
 #!/usr/bin/env python
 # Search for TODO, or correct to see issues to be resolved
 
+
 # TITLE
 # TRIGGER FUNCTION FOR LOCALIZATION AFTER FIRST AT DETECTION
 # TODO: LOOK into node IND_NAV OF COORDINATION OR NAVIGATION FOR (DETECT RED LINE & AT DETECTION), THEN THERE IS A SWITCH TO TELL DB TO GO R, L OR STRAIGHT
 
+# TODO: if first apriltag is detected, go to path planning, if second AT is detected, go to other part of the code where wheel commands based on the generated path are published to wheel_cmd_node
+# def pathProcessor(self, path): generates the wheelcommands from the path (wheelCmdList as output array)
+# def cmdToWheel(self, AT_msg, wheelCmdList): publishes the relevant wheelcmd in runtime. Use pop out function to update the wheelcmd that needs to be published
+# Stop localization node once 1st AT has come in
+
+# WARNING: TODO the actual execution should also take into account the traffic rules/lane directions - use another processing node to assign task priority
+
+
 # DESCRIPTION
 # This script takes input from apriltags_postprocessing_node and checks if a localizable AT (that is included in our predefined map) is reached
 # If so, it produces a usable input to the path_planning module for further processing and therefore acts as a switch, if not, AT_detection and lane_following continue
+
 
 # OVERALL SOLUTION/PIPELINE
 # First part of GOTO-1 solution:
 # Activate indefinite_navigation (https://github.com/duckietown/dt-core/tree/daffy/packages/indefinite_navigation) OR lane_following () in parallel to AT_detection () and this node.
 # When AT detected, localize in predefined map (according to DT protocol), and continue to path_planning
 
+
+# QUESTIONS
+# Question_1: where to implement? Implement in AT_detection_node and then send message to stop lane_following and run localization_node?
+# Guess not, subscribe to output message (topic) of AT_detection_node, then run cmd 'if some_msg==True' and trigger the switch node to run localization_node.
+# Question_2: how to run this node in parallel with AT_detection and lane_following (note: all incl in indefinite_navigation demo)?
+# Guess building a new container, running it upon start (order of activating the containers matters?!)
+# Question_3: Define a new topic to send to localization_node? Or could we use an existing one?
+# Guess yes, since this is a new node/script, sending a message to another new script as trigger switch msg
+# Reconsider, implement the whole localization node in the same script
+# Question_4: when and how to abort/kill this node? Should only run once to generate path, then, other detected AT's should invoke a wheel_cmd only.
+# Guess output cmd of this node can be published to other node, no need for storing these on ParameterServer.
+# Question_5: what does DB do during computation of path_planning and localization? Does it proceed with ind_nav or lane_following?
+# If yes, this is undesired as the executing wheel command could be activated if the DB has e.g. already passed the intersection..
+# Question_6: more interesting to define 'map' as an array outside this script, and then calling it? More universal approach and scalable!
+# Guess yes.
+
+# Question_7: what does this node do when there is no AT detected? There is no message being published from apriltags_postprocessing_node?
+# Guess nothing, since there is also no trigger for the callback function defined in this localization node: there is no action.
+# Question_8: we need to override and pass an ignore command to the wheels/something when another AT is detected
+# (and is understood by the node reading from the apriltags_postprocessing_node). Guess yes, so deactivate and replace that node in TOTAL.
+# Question_9: how to make sure that the wheel_cmd is executed until the turn (L,R) or straight command is executed and a new road is entered
+# ({road} = {drivable DT}\{intersections})? Guess, check existing code structures.
+
+# Question_10: is the parameter self.goal updated everytime it is called for? s.t. during the deployment of the goto-1 solution,
+# the end goal can be updated from the command line? Guess yes.
+
+# ------------------------------------------------------------------------------------------------------------------------------------ #
 
 # IMPORT
 import numpy as np
@@ -36,7 +73,7 @@ class LocalizationNode(DTROS):
 
         # Initialize variables
         self.node_name = rospy.get_name()
-        self.log() = rospy.loginfo() #correct?
+        self.log = rospy.loginfo() #correct?
         rospy.loginfo("[%s] Initializing." % (self.node_name))
         self.AT = False
 
@@ -64,39 +101,8 @@ class LocalizationNode(DTROS):
 
 
 # CODE GOES HERE
-
-# Question_1: where to implement? Implement in AT_detection_node and then send message to stop lane_following and run localization_node?
-# Guess not, subscribe to output message (topic) of AT_detection_node, then run cmd 'if some_msg==True' and trigger the switch node to run localization_node.
-# Question_2: how to run this node in parallel with AT_detection and lane_following (note: all incl in indefinite_navigation demo)?
-# Guess building a new container, running it upon start (order of activating the containers matters?!)
-# Question_3: Define a new topic to send to localization_node? Or could we use an existing one?
-# Guess yes, since this is a new node/script, sending a message to another new script as trigger switch msg
-# Reconsider, implement the whole localization node in the same script
-# Question_4: when and how to abort/kill this node? Should only run once to generate path, then, other detected AT's should invoke a wheel_cmd only.
-# Guess output cmd of this node can be published to other node, no need for storing these on ParameterServer.
-# Question_5: what does DB do during computation of path_planning and localization? Does it proceed with ind_nav or lane_following?
-# If yes, this is undesired as the executing wheel command could be activated if the DB has e.g. already passed the intersection..
-# Question_6: more interesting to define 'map' as an array outside this script, and then calling it? More universal approach and scalable!
-# Guess yes.
-
-# Question_7: what does this node do when there is no AT detected? There is no message being published from apriltags_postprocessing_node?
-# Guess nothing, since there is also no trigger for the callback function defined in this localization node: there is no action.
-# Question_8: we need to override and pass an ignore command to the wheels/something when another AT is detected
-# (and is understood by the node reading from the apriltags_postprocessing_node). Guess yes, so deactivate and replace that node in TOTAL.
-# Question_9: how to make sure that the wheel_cmd is executed until the turn (L,R) or straight command is executed and a new road is entered
-# ({road} = {drivable DT}\{intersections})? Guess, check existing code structures.
-
-# Question_10: is the parameter self.goal updated everytime it is called for? s.t. during the deployment of the goto-1 solution,
-# the end goal can be updated from the command line? Guess yes.
-
-
-# TODO: if first apriltag is detected, go to path planning, if second AT is detected, go to other part of the code where wheel commands based on the generated path are published to wheel_cmd_node
-# def pathProcessor(self, path): generates the wheelcommands from the path (wheelCmdList as output array)
-# def cmdToWheel(self, AT_msg, wheelCmdList): publishes the relevant wheelcmd in runtime. Use pop out function to update the wheelcmd that needs to be published
-# Stop localization node once 1st AT has come in
-
 # Look into coordinator node, unicorn intersection and random AT
-# rospy.loginfo
+# rospy.loginfo, pop out function python
 
     def callback(self, msg):
         #correct? Should not matter - ask to implement clean code ~with FSM
@@ -181,34 +187,25 @@ class LocalizationNode(DTROS):
         new_cmd.tag_id = cmd[0]
         # Define the turn command
         # WARNING: could be hardcoded in the map as well, but current set up allows more flexibility
-        if cmd[1] = 0:
+        if cmd[1] == 0:
             # The index 0, 1 and 2 is used for turn_type msg type (see also random_april_tag_turns_node and open_loop_intersection_node)
             new_cmd.turn_type = 0
             self.log("Turn left")
-        elif cmd[1] = 1:
+        elif cmd[1] == 1:
             new_cmd.turn_type = 1
             self.log("Go straight")
-        elif cmd[1] = 2:
+        elif cmd[1] == 2:
             new_cmd.turn_type = 2
             self.log("Turn right")
 
         return new_cmd
 
-
-"""
-            NOT NEEDED ANYMORE: do everything within this script/node
-            # Publish overview of wheel commands at each next AT to be encountered - not yet with task priority over other commands (use another processing node)
-            # WARNING: the actual execution should also take into account the traffic rules/lane directions - use another processing node to assign task priority
-            self.pub_direction_cmd = 'something'
-            self.log('Message published')
-            print('Message published to ...')
-"""
-
+# SAFETY & EMERGENCY
     def on_shutdown(self):
         rospy.loginfo("[%s] Shutting down." % (self.node_name))
 
 
-# Keep node alive
+# KEEP NODE ALIVE
 if __name__ == "__main__":
     # Initialize the node with rospy
     localization_node = LocalizationNode(node_name="localization_node")
