@@ -104,11 +104,18 @@ class LocalizationNode(DTROS):
             # Toplevel function that is invoked by subscriber and then publishes commands to relevant topic
             # Define path from localized starting point/or current point in time
             path = self.path_planning(self.localization(msg))
-            # from generated SP, generate sequence of wheel command of type TurnIDandType to publish
-            wheelcommand = self.pathProcessor(path)
 
-            # publish relevant wheel command of type TurnIDandType
-            self.pub_direction_cmd.publish(wheelcommand)
+            # If there is an actual path to be executed, run the following (path-actuation):
+            if len(path) > 1:
+                # from generated SP, generate sequence of wheel command of type TurnIDandType to publish
+                wheelcommand = self.pathProcessor(path)
+
+                # publish relevant wheel command of type TurnIDandType
+                self.pub_direction_cmd.publish(wheelcommand)
+
+            # If there is no path, and the last AT is encountered, run the following (state-estimation):
+            else:
+                "Do something"
 
             #IGNORE: find when a single command should be published (and for how long)
             #IGNORE: this is not sufficient to allow enough time for wheelcmd execution (rospy.sleep(5.0))
