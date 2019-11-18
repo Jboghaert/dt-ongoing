@@ -8,7 +8,6 @@
 # This script takes input from apriltags_postprocessing_node and checks if a localizable AT (that is included in our predefined map) is reached
 # If so, it produces a usable input to the path_planning module for further processing and therefore acts as a switch, if not, AT_detection and lane_following continue
 # The path_planning module returns the shortest path and executable wheel commands that are then published to unicorn_intersection_node
-# If the final AT is reached, a state estimation function (listening to the camera_node topic) is started (issue: actions wrt. both subscribers are coupled)
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------- #
 
@@ -18,15 +17,12 @@ import numpy as np
 import os
 import rospy
 import yaml
-import time
 
 from duckietown import DTROS
 from duckietown_msgs.msg import AprilTagsWithInfos, TagInfo, BoolStamped, AprilTagDetection, TurnIDandType
-from sensor_msgs.msg import CompressedImage
-from duckietown_msgs.msg import WheelsCmdStamped
 
 from path_planning_class import PathPlanner
-from visual_odometry import StateEstimator
+#from visual_odometry import StateEstimation
 
 
 # INITIATE DTROS CLASS (incl sub/pub)
@@ -40,7 +36,6 @@ class LocalizationNode(DTROS):
         self.node_name = rospy.get_name()
         self.veh_name = rospy.get_namespace().strip("/")
         self.AT = False
-        self.camera = False
 
         # Initialize logging services
         self.log = rospy.loginfo() #correct?
@@ -52,20 +47,18 @@ class LocalizationNode(DTROS):
         self.goal = self.input[0]
         self.goal_distance = self.input[1]
 
-        # Import from external class PathPlanner as pp, StateEstimator as se
+        # Import from external class PathPlanner as pp
         self.pp = PathPlanner()
         self.tags = self.pp.tags
         self.graph = self.pp.graph
-        self.se = StateEstimator(stripe_length=2.5) #set length of midlane stripe in cm
-        self.stripeCounter = self.se.stripeCounter
 
         # List subscribers
         self.sub_AT_detection = rospy.Subscriber('~apriltags_out', AprilTagsWithInfos, self.callback) #from apriltags_postprocessing_node
-        #self.sub_wheels_cmd = rospy.Subscriber("~/%s/camera_node/image/compressed" % veh_name, CompressedImage, self.cbCamera) #from camera_node
+        #self.sub_wheels_cmd = rospy.Subscriber("~/%s/camera_node/image/compressed" % veh_name, CompressedImage, self.odometer) #from camera_node
 
         # List publishers
         self.pub_direction_cmd = rospy.Publisher('~turn_id_and_type', TurnIDandType, queue_size = 1, latch = True) # to unicorn_intersection_node
-        self.pub_wheels_cmd = rospy.Publisher("~/%s/wheels_driver_node/wheels_cmd" % veh_name, WheelsCmdStamped, queue_size=1) # directly publish to wheels
+        #self.pub_wheels_cmd = rospy.Publisher("~/%s/wheels_driver_node/wheels_cmd" % veh_name, WheelsCmdStamped, queue_size=1) # directly publish to wheels
 
         # Conclude
         rospy.loginfo("[%s] Initialized." % (self.node_name))
@@ -91,11 +84,8 @@ class LocalizationNode(DTROS):
             # After the turn cmd of the before-last AT, start state-estimation (due to definition arrival point B):
             elif len(path) == 2:
                 # Import from another class (since this might improve in future project - allow easy iteration)
-                self.odometer(self.goal_distance, self.imageProcessor(img #TODO ))
                 print("start state estimation")
-
                 # After stopping, shutdown node
-                pass #correct? No cmd is sent to the unicorn_intersection_node anymore, only directly to the wheels
 
             # If the final AT is detected (could happen when arrival point B is too close to final AT), ignore input:
             else:
@@ -169,57 +159,8 @@ class LocalizationNode(DTROS):
         elif cmd_comb[1] == 2:
             new_cmd.turn_type = 2
             self.log("Turn right")
+
         return new_cmd
-
-
-    def cbCamera(self, img):
-        image = img
-        return image
-
-
-    def odometer(self, dist, img):
-        # Only trigger when necessary
-        if self.camera == False:
-            pass #correct?
-
-        else:
-            # Define number of midlane stripes to cover until final point is reached from last AT
-            # Used distance is actual distance, not input distance (which would be the distance BEFORE the last AT is reached)
-            n_stripes = dist / self.stripe_length
-
-            # Count number of stripes incoming
-            n_stripes_actual = self.stripeCounter(img)
-
-            # Trigger function
-            if n_stripes_actual < n_stripes:
-                self.log("Still going ... whoop whoop")
-
-            elif n_stripes_actual >= n_stripes:
-                # Continue driving (tune by testing) as final destination is in front of DB (image ≠ actual position)
-                self.log("Reaching final destination point ... preparing x seconds delayed stop")
-                seconds = (n_stripes_actual - n_stripes) + 2
-                time.sleep(seconds)
-                # Publish command
-                self.pub_wheels_cmd.publish(self.stopCmd)
-                self.log("Reached final destination point ... sending stop_cmd")
-
-            else:
-                # Stop immediately, do not delay stopping procedure
-                self.log("Final destination point already reached ... preparing quick stop")
-                # Publish command
-                self.pub_wheels_cmd.publish(self.stopCmd)
-                self.log("Reached final destination point ... sending stop_cmd")
-                self.log("")
-
-
-# REACHING FINAL POINT
-    def stopCmd(self):
-        # Produce wheel stopping cmd vel(0,0)
-        stop_cmd = WheelsCmdStamped()
-        stop_cmd.vel_left = 0.0
-        stop_cmd.vel_right = 0.0
-        return stop_cmd
-
 
 # SAFETY & EMERGENCY
     def on_shutdown(self):
