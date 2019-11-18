@@ -21,7 +21,8 @@ import yaml
 import time
 
 from duckietown import DTROS
-from duckietown_msgs.msg import AprilTagsWithInfos, TagInfo, BoolStamped, AprilTagDetection, TurnIDandType
+from duckietown_msgs.msg import AprilTagsWithInfos, TagInfo, AprilTagDetection, TurnIDandType
+from duckietown_msgs.msg import BoolStamped, DuckieSensor
 from sensor_msgs.msg import CompressedImage
 from duckietown_msgs.msg import WheelsCmdStamped
 
@@ -41,6 +42,7 @@ class LocalizationNode(DTROS):
         self.veh_name = rospy.get_namespace().strip("/")
         self.AT = False
         self.camera = False
+        #self.image = None
 
         # Initialize logging services
         self.log = rospy.loginfo() #correct?
@@ -56,16 +58,15 @@ class LocalizationNode(DTROS):
         self.pp = PathPlanner()
         self.tags = self.pp.tags
         self.graph = self.pp.graph
-        self.se = StateEstimator(stripe_length=2.5) #set length of midlane stripe in cm
-        self.stripeCounter = self.se.stripeCounter
+        #self.se = StateEstimator(stripe_length=2.5) #set length of midlane stripe in cm
 
         # List subscribers
         self.sub_AT_detection = rospy.Subscriber('~apriltags_out', AprilTagsWithInfos, self.callback) #from apriltags_postprocessing_node
-        #self.sub_wheels_cmd = rospy.Subscriber("~/%s/camera_node/image/compressed" % veh_name, CompressedImage, self.cbCamera) #from camera_node
 
         # List publishers
         self.pub_direction_cmd = rospy.Publisher('~turn_id_and_type', TurnIDandType, queue_size = 1, latch = True) # to unicorn_intersection_node
-        self.pub_wheels_cmd = rospy.Publisher("~/%s/wheels_driver_node/wheels_cmd" % veh_name, WheelsCmdStamped, queue_size=1) # directly publish to wheels
+        self.pub_state_estimation = rospy.Publisher('~state_estimator', BoolStamped, queue_size = 1, latch = True) # create new topic to visual_odometry
+        self.pub_wheels_cmd = rospy.Publisher("~/%s/wheels_driver_node/wheels_cmd" % veh_name, WheelsCmdStamped, queue_size=1) # for emergency stop, else use onShutdown
 
         # Conclude
         rospy.loginfo("[%s] Initialized." % (self.node_name))
@@ -90,8 +91,19 @@ class LocalizationNode(DTROS):
 
             # After the turn cmd of the before-last AT, start state-estimation (due to definition arrival point B):
             elif len(path) == 2:
-                # Import from another class (since this might improve in future project - allow easy iteration)
-                self.odometer(self.goal_distance, self.imageProcessor(img #TODO ))
+                # Publish final turn command
+                wheelcommand = self.pathProcessor(path, cmd)
+                self.pub_direction_cmd.publish(wheelcommand)
+
+                # Publish trigger to wheel_odometry node (starts counting when first yellow striped is found)
+                # WARNING: to activate a callback function on a topic inside another callback function on a different topic is not possible - use 2 scripts/nodes
+                se_cmd = DuckieSensor() #currently a random msg structure to visual_odometry_node, change TODO
+                se_cmd.value = self.goal_distance
+                se_cmd.is_analog = True
+                self.pub_state_estimation.publish(se_cmd)
+
+                # Keep node alive
+                self.odometer(self.goal_distance, self.imageProcessor(self.img))
                 print("start state estimation")
 
                 # After stopping, shutdown node
@@ -172,46 +184,6 @@ class LocalizationNode(DTROS):
         return new_cmd
 
 
-    def cbCamera(self, img):
-        image = img
-        return image
-
-
-    def odometer(self, dist, img):
-        # Only trigger when necessary
-        if self.camera == False:
-            pass #correct?
-
-        else:
-            # Define number of midlane stripes to cover until final point is reached from last AT
-            # Used distance is actual distance, not input distance (which would be the distance BEFORE the last AT is reached)
-            n_stripes = dist / self.stripe_length
-
-            # Count number of stripes incoming
-            n_stripes_actual = self.stripeCounter(img)
-
-            # Trigger function
-            if n_stripes_actual < n_stripes:
-                self.log("Still going ... whoop whoop")
-
-            elif n_stripes_actual >= n_stripes:
-                # Continue driving (tune by testing) as final destination is in front of DB (image ≠ actual position)
-                self.log("Reaching final destination point ... preparing x seconds delayed stop")
-                seconds = (n_stripes_actual - n_stripes) + 2
-                time.sleep(seconds)
-                # Publish command
-                self.pub_wheels_cmd.publish(self.stopCmd)
-                self.log("Reached final destination point ... sending stop_cmd")
-
-            else:
-                # Stop immediately, do not delay stopping procedure
-                self.log("Final destination point already reached ... preparing quick stop")
-                # Publish command
-                self.pub_wheels_cmd.publish(self.stopCmd)
-                self.log("Reached final destination point ... sending stop_cmd")
-                self.log("")
-
-
 # REACHING FINAL POINT
     def stopCmd(self):
         # Produce wheel stopping cmd vel(0,0)
@@ -275,3 +247,46 @@ if __name__ == "__main__":
 # Question_10: is the parameter self.goal updated everytime it is called for? s.t. during the deployment of the goto-1 solution,
 # the end goal can be updated from the command line? Guess yes.
 # Question_11: General functioning of else pass/break/continue statements. What is correct?
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+
+"""
+    def cbCamera(self, img):
+        self.image = img
+
+
+    def odometer(self, dist, img):
+        # Only trigger when necessary
+        if self.camera == False:
+            pass #correct?
+
+        else:
+            # Define number of midlane stripes to cover until final point is reached from last AT
+            # Used distance is actual distance, not input distance (which would be the distance BEFORE the last AT is reached)
+            n_stripes = dist / self.stripe_length
+
+            # Count number of stripes incoming
+            n_stripes_actual = self.stripeCounter(img)
+
+            # Trigger function
+            if n_stripes_actual < n_stripes:
+                self.log("Still going ... whoop whoop")
+
+            elif n_stripes_actual >= n_stripes:
+                # Continue driving (tune by testing) as final destination is in front of DB (image ≠ actual position)
+                self.log("Reaching final destination point ... preparing x seconds delayed stop")
+                seconds = (n_stripes_actual - n_stripes) + 2
+                time.sleep(seconds)
+                # Publish command
+                self.pub_wheels_cmd.publish(self.stopCmd)
+                self.log("Reached final destination point ... sending stop_cmd")
+
+            else:
+                # Stop immediately, do not delay stopping procedure
+                self.log("Final destination point already reached ... preparing quick stop")
+                # Publish command
+                self.pub_wheels_cmd.publish(self.stopCmd)
+                self.log("Reached final destination point ... sending stop_cmd")
+                self.log("")
+"""
