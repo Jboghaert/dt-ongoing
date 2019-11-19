@@ -81,7 +81,7 @@ class StateEstimator(DTROS):
         while self.from_localization_node == True:
             # Define number of midlane stripes to cover until final point is reached from last AT
             # Used distance is actual distance, not input distance (which would be the distance BEFORE the last AT is reached)
-            n_stripes = self.goal_distance // int(self.stripe_length)
+            n_stripes = int(self.goal_distance / self.stripe_length)
 
             # Count number of stripes incoming (continously, so use 'while' loop)
             n_stripes_actual = self.stripeCounter(img)

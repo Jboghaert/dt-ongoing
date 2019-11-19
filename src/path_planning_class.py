@@ -9,6 +9,9 @@
 # It also takes into account the distances AND the number of turns between nodes (AT's) as weights/scaled costs for the SSP problem.s
 # Output is a string of nodes (AT's) that the DB has to follow in order to get to the desired end point via the shortest path.
 
+# TODO:
+# Convert this to DTROS class based script, in order to use ros logging services
+
 # IMPORT
 import numpy as np
 import os
@@ -33,6 +36,15 @@ class PathPlanner:
             self.set_iD[i] = str(self.tags[i])
 
         iD = self.set_iD
+
+        """
+        Use this version for the demo version (with AT implemented)
+        self.graph = {iD[1]: {iD[2]: 10, iD[3]: 4},
+                    iD[2]: {iD[4]: 8, iD[4]: 2},
+                    iD[3]: {iD[2]: 6, iD[4]: 2, iD[5]: 2},
+                    iD[4]: {iD[5]: 7},
+                    iD[5]: {iD[4]: 9}}
+        """
 
         # Define weights/costs between AT's to base SSP on - this is the predefined DT map (manual input)
         # Each intersection has as many different AT's as it has roads (e.g. a T-intersection has 3 roads, and for each road another AT id)
@@ -79,15 +91,6 @@ class PathPlanner:
                     'j1': {'e3': 8.4, 'i3': 1.9},
                     'j2': {'e3': 7.7, 'h3': 2.7},
                     'j3': {'h3': 1.9, 'i3': 2}}
-
-        """
-        Use this version for the demo version (with AT implemented)
-        self.graph = {iD[1]: {iD[2]: 10, iD[3]: 4},
-                    iD[2]: {iD[4]: 8, iD[4]: 2},
-                    iD[3]: {iD[2]: 6, iD[4]: 2, iD[5]: 2},
-                    iD[4]: {iD[5]: 7},
-                    iD[5]: {iD[4]: 9}}
-        """
 
         self.graph_direction = {
                     'a1': {'b1': 1, 'c1': 0},
