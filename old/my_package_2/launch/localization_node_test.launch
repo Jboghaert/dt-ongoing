@@ -1,0 +1,11 @@
+<launch>
+
+  <arg name="robot_name" default="maserati4pgts"/>
+  <arg name="goal_input" default="231"/>
+  <arg name="goal_distance" default="40"/>
+  <node pkg="my_package_2" type="localization_node_test.py" name="localization_node_test" output="screen" args="$(arg goal_input) $(arg goal_distance)">
+    <param name="goal_input" type="int" value="$(arg goal_input)" />
+    <param name="goal_distance" type="int" value="$(arg goal_distance)" />
+  </node>
+
+</launch>
